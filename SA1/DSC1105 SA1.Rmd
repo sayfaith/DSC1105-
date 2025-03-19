@@ -1,0 +1,410 @@
+---
+title: "SA1 DSC1105"
+author: "Lindsay Faith Bazar"
+date: "March 19, 2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Unit 1: Univariate Data Analysis
+
+
+#### 1. Load the dataset and summarize its structure.
+
+```{r}
+suppressPackageStartupMessages(suppressWarnings({
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra)
+library(grid)
+library(e1071) 
+library(broom)
+}))
+
+data <- read.csv("EDA_Ecommerce_Assessment.csv")
+summary(data)
+```
+
+The dataset contains 3,000 customer records. It has 10 variables, including customer demographics, purchase details, and satisfaction scores.
+
+#### 2. Create histograms and boxplots to visualize the distribution of Purchase_Amount, Number_of_Items, and Satisfaction_Score.
+
+```{r histogram}
+theme_custom <- theme_minimal() + theme(
+  plot.title = element_text(size = 12, face = "bold"),
+  axis.title = element_text(size = 10, face = "bold"),
+  axis.text = element_text(size = 8)
+)
+
+
+h1 <- ggplot(data, aes(Purchase_Amount)) +
+  geom_histogram(bins = 30, fill = 	"#DC143C", color = "black", alpha = 0.8) +
+  labs(x = "Purchase Amount", y = "Count") +
+  theme_custom
+
+h2 <- ggplot(data, aes(Number_of_Items)) +
+  geom_histogram(bins = 15, fill = "#F7E7CE", color = "black", alpha = 0.8) +
+  labs(x = "Number of Items", y = "Count") +
+  theme_custom
+
+h3 <- ggplot(data, aes(Satisfaction_Score)) +
+  geom_bar(fill = '#50C878', color = "black", alpha = 0.8) +
+  labs(x = "Satisfaction Score", y = "Count") +
+  theme_custom
+
+
+grid.arrange(h1, h2, h3, nrow = 1, top = textGrob("Histogram Distribution of \nPurchase Amounts, Items, and Satisfaction\n", gp = gpar(fontsize = 18, fontface = "bold", col = "#1D3557"))
+)
+```
+
+```{r boxplots}
+b1 <- ggplot(data, aes(y = Purchase_Amount)) +
+  geom_boxplot(fill = "#DC143C", alpha = 0.8) +
+  labs(y = "Purchase Amount") +
+  theme_custom
+
+b2 <- ggplot(data, aes(y = Number_of_Items)) +
+  geom_boxplot(fill = "#F7E7CE", alpha = 0.8) +
+  labs(y = "Number of Items") +
+  theme_custom
+
+b3 <- ggplot(data, aes(y = Satisfaction_Score)) +
+  geom_boxplot(fill = "#50C878", alpha = 0.8) +
+  labs(y = "Satisfaction Score") +
+  theme_custom
+
+
+grid.arrange(b1, b2, b3, nrow = 1, top = textGrob("Boxplot Distribution of \nPurchase Amounts, Items, and Satisfaction\n", gp = gpar(fontsize = 18, fontface = "bold", col = "#1D3557"))
+)
+```
+
+#### 3. Compute measures of central tendency (mean, median, mode) and spread (variance, standard deviation, IQR) for Purchase_Amount.
+
+```{r central tendency}
+
+summary_purchase <- data %>%
+  summarise(
+    Statistic = c("Mean", "Median", "Mode", "Standard Deviation", "Variance", "Interquartile Range"),
+    Value = c(
+      mean(Purchase_Amount, na.rm = TRUE),
+      median(Purchase_Amount, na.rm = TRUE),
+      as.numeric(names(sort(table(Purchase_Amount), decreasing = TRUE)[1])),
+      sd(Purchase_Amount, na.rm = TRUE),
+      var(Purchase_Amount, na.rm = TRUE),
+      IQR(Purchase_Amount, na.rm = TRUE)
+    )
+  )
+
+kable(summary_purchase, caption = "Amount Purchase Statistics", col.names = c("Statistic", "Value")) %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+#### 4. Compare the distribution of Browsing_Time and Purchase_Amount across different Gender groups using density plots.
+
+```{r density_comparison}
+bt <- ggplot(data, aes(x = Browsing_Time, color = Gender, fill = Gender)) +
+  geom_density(alpha = 0.5) +
+  scale_color_manual(values = c("Female" = "#FF007F", "Male" = "#007FFF")) +
+  scale_fill_manual(values = c("Female" = "#FF007F", "Male" = "#007FFF")) +
+  labs(x = "Browsing Time")  +
+  theme_custom
+
+pa <- ggplot(data, aes(x = Purchase_Amount, color = Gender, fill = Gender)) +
+  geom_density(alpha = 0.5) +
+  scale_color_manual(values = c("Female" = "#FF007F", "Male" = "#007FFF")) +
+  scale_fill_manual(values = c("Female" = "#FF007F", "Male" = "#007FFF")) +
+  labs(x = "Purchase Amount") +
+  theme_custom
+
+grid.arrange(bt, pa, ncol = 2, top = textGrob("Comparison of Density Plot by Gender", gp = gpar(fontsize = 14, fontface = "bold", col = "#1D3557")))
+```
+
+While there are some small differences in browsing and spending behavior, the overall pattern for males and females are quite similar. A high concentration of users spend around 25 to 100 minutes browsing, with a slight tendency for females to spend a bit less time browsing compared to males, but the difference isn’t very large. On the purchase amount, both genders follow a similar spending pattern, with most purchases clustering around 200 to 400 units.
+
+
+#### 5. Apply a logarithmic or square root transformation on Browsing_Time and evaluate changes in skewness.
+
+```{r transformations}
+data <- data %>% mutate(
+  Browsing_Time_Log = log1p(Browsing_Time),
+  Browsing_Time_Sqrt = sqrt(Browsing_Time)
+)
+
+skewness_values <- tibble(
+  Measure = c("Original Skewness", "Log Transformed Skewness", "Sqrt Transformed Skewness"),
+  Value = c(
+    skewness(data$Browsing_Time, na.rm = TRUE),
+    skewness(data$Browsing_Time_Log, na.rm = TRUE),
+    skewness(data$Browsing_Time_Sqrt, na.rm = TRUE)
+  )
+)
+
+kable(skewness_values, caption = "Browsing Time Skewness Transformation" , col.names = c("Measure", "Value"), align = "c") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+The original data was already quite symmetric. The square root transformation improved symmetry slightly without overcorrection. While the log transformation overcompensated and introduced significant negative skewness, making it less ideal in this case.
+
+#### 6. Fit a simple linear regression model predicting Purchase_Amount based on Browsing_Time. Interpret the results.
+
+```{r regression_model}
+model <- lm(Purchase_Amount ~ Browsing_Time, data = data)
+sum_model <- summary(model)
+
+kable(tidy(sum_model), caption = " Linear Regression Model of Amount Purchase based on Browsing Time", col.names = c("Term", "Estimate", "Std. Error", "t value", "Pr(>|t|)"), align = "c") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+The intercept is the predicted purchase amount when Browsing Time = 0. If someone doesn't spend any time browsing, the expected purchase amount is ₱252.66.
+
+In addition, for every additional unit of browsing time, the purchase amount is expected to decrease slightly by ₱0.078.
+However, this change is not meaningful or strong enough to confidently say browsing time affects spending.
+
+Lastly, since the p-value is greater than 0.05, the effect of browsing time is not statistically significant, which means that browsing time doesn’t directly impact how much people spend.
+
+#### 7. Use ggplot2 (or equivalent) to create scatter plots and regression lines.
+
+
+```{r scatter_plots}
+ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.6, color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Scatter Plot of Browsing Time vs Purchase Amount", x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom +
+  theme(plot.title = element_text(hjust = 0.5, color = "#1D3557", size = 16, face = "bold"))
+```
+
+The red trend line is almost flat, which means that there’s little to no relationship between browsing time and purchase amount. Thus, spending more time browsing does not significantly impact how much a customer spends.
+
+## Unit 2: Bivariate Data Analysis
+
+#### 8. Create scatter plots to explore the relationship between Purchase_Amount and Number_of_Items.
+
+```{r scatter_plots2}
+ggplot(data, aes(x = Number_of_Items, y = Purchase_Amount)) +
+  geom_point(alpha = 0.6, color = "purple") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkred") +
+  labs(title = "Scatter Plot of Number of Items vs Purchase Amount", x = "Number of Items", y = "Purchase Amount") +
+  theme_custom +
+  theme(plot.title = element_text(hjust = 0.5, color = "#1D3557", size = 16, face = "bold"))
+
+```
+
+The trend line is also mostly flat, which means there’s little to no correlation between the number of items and the purchase amount.Thus, buying more items does not significantly increase or decrease the purchase amount.
+
+#### 9. Fit a polynomial regression model for Purchase_Amount and Browsing_Time and compare it with a simple linear model.
+
+```{r polynomial_regression}
+poly_model <- lm(Purchase_Amount ~ poly(Browsing_Time, 2), data = data)
+poly_summary <- tidy(poly_model)
+
+kable(poly_summary, caption = "Polynomial Regression Model for Amount Purchase and Browsing", align = "c") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+```{r compare_regression_models}
+lin <- ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "green") +
+  labs(title = "Linear Regression", x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom
+
+
+pol <- ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", formula = y ~ poly(x, 2)) +
+  labs(title = "Polynomial Regression", x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom
+
+grid.arrange(lin, pol, ncol = 2, top = textGrob("Comparison of Regression Models", gp = gpar(fontsize = 14, fontface = "bold", col = "#1D3557")))
+```
+
+Both models perform similarly with no clear advantage for polynomial regression in this case. Both regression models suggest that Browsing Time has little to no effect on Purchase Amount. 
+
+Since neither model identifies a clear trend, this suggests that browsing time alone may not be a strong predictor of purchase behavior. 
+
+#### 10. Apply LOESS (Locally Estimated Scatterplot Smoothing) to Purchase_Amount vs. Browsing_Time and visualize the results.
+
+```{r loess_smoothing}
+ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  labs(title = "LOESS Smoothing of Purchase Amount vs Browsing Time", x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom +
+  theme(plot.title = element_text(hjust = 0.5, color = "#1D3557", size = 15, face = "bold"))
+```
+
+Although there is some fluctuations here and there, the red curve is mostly flat, which means that Browsing Time has little to no impact on Purchase Amount.
+
+#### 11. Compare robust regression methods (Huber or Tukey regression) with ordinary least squares (OLS).
+
+```{r robust_regression}
+library(MASS) 
+
+ols_model <- lm(Purchase_Amount ~ Browsing_Time, data = data)
+huber_model <- rlm(Purchase_Amount ~ Browsing_Time, data = data, psi = psi.huber)
+tukey_model <- rlm(Purchase_Amount ~ Browsing_Time, data = data, psi = psi.bisquare)
+
+ols_summary <- tidy(model) %>% mutate(Model = "OLS")
+huber_summary <- tidy(huber_model) %>% mutate(Model = "Huber")
+tukey_summary <- tidy(tukey_model) %>% mutate(Model = "Tukey")
+
+robust_comparison <- bind_rows(ols_summary, huber_summary, tukey_summary)
+
+kable(
+  robust_comparison, 
+  caption = "Comparison of OLS, Huber, and Tukey Robust Regression", 
+  col.names = c("Term", "Estimate", "Std. Error", "t value", "Pr(>|t|)", "Model"),
+  align = "c"
+) %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+```{r}
+pred_data <- data.frame(Browsing_Time = seq(min(data$Browsing_Time), max(data$Browsing_Time), length.out = 100))
+
+pred_data$ols <- predict(ols_model, newdata = pred_data)
+pred_data$huber <- predict(huber_model, newdata = pred_data)
+pred_data$tukey <- predict(tukey_model, newdata = pred_data)
+
+ols <- ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_line(data = pred_data, aes(x = Browsing_Time, y = ols), color = "red", size = 1) +
+  labs(title = "Ordinary Least Squares \n(OLS)", x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom
+
+hub <- ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_line(data = pred_data, aes(x = Browsing_Time, y = huber), color = "green", size = 1) +
+  labs(title = "Huber Regression", x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom
+
+tuk <- ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_line(data = pred_data, aes(x = Browsing_Time, y = tukey), color = "purple", size = 1) +
+  labs(title = "Tukey's Biweight\n Regression", x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom
+
+grid.arrange(ols, hub, tuk, ncol = 3, top = textGrob("Comparison of Robust Regression Methods with OLS\n", gp = gpar(fontsize = 18, fontface = "bold", col = "#1D3557")))
+
+```
+
+OLS shows a slight decrease in purchase amount as browsing time increases. However, OLS is sensitive to outliers, which may pull the trend line down. Both Huber and Tukey's Biweight methods suggest that browsing time has no significant effect on purchase amount. However, for data with potential outliers, Huber or Tukey's Biweight may provide a more reliable trend than OLS.
+
+## Unit 3: Trivariate/Hypervariate Data Analysis
+
+#### 12. Explore interaction effects between Browsing_Time and Category on Purchase_Amount using interaction plots.
+
+```{r interaction_effects}
+
+library(interactions)
+
+interaction_model <- lm(Purchase_Amount ~ Browsing_Time * Category, data = data)
+
+interact_plot(interaction_model, pred = Browsing_Time, modx = Category, 
+              interval = TRUE, int.width = 0.95, colors = "Dark2") +
+  labs(title = "Interaction Effect of Browsing Time and Category on Purchase Amount",
+       x = "Browsing Time", y = "Predicted Purchase Amount") +
+  theme_custom +
+  theme(plot.title = element_text(color = "#1D3557", size = 13, face = "bold"))
+```
+
+Books show a noticeable decrease in purchase amount with longer browsing times. While clothing shows a slight increase in purchase amount with longer browsing times.
+Other categories like Beauty and Electronics show minimal impact from browsing time.
+
+#### 13. Create coplots of Purchase_Amount against Browsing_Time for different levels of Category.
+
+```{r}
+ggplot(data, aes(x = Browsing_Time, y = Purchase_Amount)) +
+  geom_point(alpha = 0.6, color = "blue") + 
+  geom_smooth(method = "lm", se = FALSE, color = "red") +  
+  facet_wrap(~ Category, scales = "free") +  
+  labs(title = "Coplot: Purchase Amount vs. Browsing Time by Category",
+       x = "Browsing Time", y = "Purchase Amount") +
+  theme_custom +
+  theme(plot.title = element_text(hjust = 0.5, color = "#1D3557", size = 16, face = "bold"))
+```
+
+Overall, browsing time does not strongly influence purchase amount in most categories. Only Books show a slight negative trend (longer browsing times may be linked to slightly lower purchase amounts.), while Clothing shows a minor positive trend (longer browsing times may be linked to a minor increase in purchase amount). While other categories like Beauty, Electronics, and Home & Kitchen show little to no impact from browsing time.
+
+#### 14. Use level plots or contour plots to visualize relationships between Browsing_Time, Number_of_Items, and Purchase_Amount.
+
+```{r}
+ggplot(data, aes(x = Browsing_Time, y = Number_of_Items, fill = Purchase_Amount)) +
+  geom_tile() + 
+  scale_fill_viridis_c(option = "plasma") + 
+  labs(title = "Heatmap of Purchase Amount", x = "Browsing Time", y = "Number of Items", fill = "Purchase Amount") +
+  theme_custom +
+  theme(plot.title = element_text(hjust = 0.5, color = "#1D3557", size = 18, face = "bold"))
+```
+
+
+```{r}
+ggplot(data, aes(x = Browsing_Time, y = Number_of_Items, z = Purchase_Amount)) +
+  geom_density_2d_filled() +  
+  labs(title = "Contour Plot of Purchase Amount", x = "Browsing Time", y = "Number of Items", fill = "Purchase Amount") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#1D3557", size = 16, face = "bold"))
+```
+
+Higher purchase amounts tend to appear around 60 to 100 minutes of browsing time. While across different number of item, noticeable peaks occur around 5 to 7 items.
+
+#### 15. Perform multiple regression with Purchase_Amount as the dependent variable and Browsing_Time, Number_of_Items, and Satisfaction_Score as predictors. Perform model selection and assess variable importance.
+
+We will use the scaled coefficients (absolute values) to compare importance.
+
+```{r}
+library(caret)
+
+data_scaled <- as.data.frame(scale(data[, c("Browsing_Time", "Number_of_Items", "Satisfaction_Score")]))
+data_scaled$Purchase_Amount <- data$Purchase_Amount
+
+
+multi_model_scaled <- lm(Purchase_Amount ~ ., data = data_scaled)
+
+importance <- abs(coef(multi_model_scaled)[-1])  
+
+importance_df <- data.frame(Variable = names(importance), Importance = importance)
+
+ggplot(importance_df, 
+       aes(x = reorder(Variable, Importance), y = Importance, fill = Variable)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_manual(values = c("Browsing_Time" = "#DC143C", 
+                               "Number_of_Items" = "#50C878", 
+                               "Satisfaction_Score" = "#F7E7CE")) +
+  labs(title = "Variable Importance in Multiple Regression", 
+       x = "Variable", 
+       y = "Importance") +
+  theme_custom +
+  theme(plot.title = element_text(hjust = 0.5, color = "#1D3557", 
+                                  size = 16, face = "bold"))
+```
+
+The bar plot helps visualize which predictor contributes most to Purchase_Amount. Since the bars are ordered from highest to lowest importance, the top variable (Browsing_Time) has the strongest influence on predicting Purchase_Amount.The second variable (Satisfaction_Score) has moderate importance. The last variable (Number_of_Items) has the least impact.
+
+
+```{r}
+
+multi_model <- lm(Purchase_Amount ~ Browsing_Time + Number_of_Items + Satisfaction_Score, data = data)
+
+multi_summary <- summary(multi_model)
+
+kable(tidy(multi_model), caption = "Multiple Regression Model Results", align = "c") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+```
+
+We can use stepwise regression (AIC-based) to find the best model.
+
+```{r}
+best_model <- stepAIC(multi_model, direction = "both")
+
+summary(best_model)
+```
+
+The best model is the baseline model with no predictors at all. Browsing_Time shows slight influence, but not enough to significantly improve model performance. This suggests that the provided predictors (Browsing_Time, Number_of_Items, Satisfaction_Score) are weak indicators of Purchase_Amount.
