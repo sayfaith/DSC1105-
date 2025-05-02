@@ -1,0 +1,151 @@
+---
+title: "FA5 DSC1105"
+author: "Lindsay Faith Bazar"
+date: "May 01, 2025"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)
+library(ggplot2)
+library(MASS)
+tinytex::install_tinytex(force = TRUE)
+```
+
+## Load and Explore the Data
+
+```{r}
+
+data <- read.csv("store_sales_data.csv")
+head(data)
+summary(data)
+str(data)
+```
+
+Distribution of Sales Count
+
+```{r}
+ggplot(data, aes(x = sales_count)) +
+  geom_histogram(fill = "forestgreen", color = "black") +
+  labs(title = "Distribution of Sales Count", x="Sales Count", y="Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Frequency of each Store Size
+
+```{r}
+ggplot(data, aes(x = store_size)) +
+  geom_bar(fill = "darkgreen") +
+  labs(title = "Frequency of Store Size", x = "Store Size", y= "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Proportion of days with Promotion and Holiday
+
+```{r}
+
+data %>%
+  pivot_longer(c(promo, holiday), names_to = "type", values_to = "flag") %>%
+  count(type, flag) %>%
+  group_by(type) %>%
+  mutate(proprtn = n / sum(n)) %>%
+  ggplot(aes(x = type, y = proprtn, fill = as.factor(flag))) +
+  geom_col(position = "dodge", width = 0.6) +
+  geom_text(aes(label = scales::percent(proprtn, accuracy = 1)),
+            position = position_dodge(width = 0.6), vjust = -0.5, size = 4) +
+  labs(title = "Proportion of Promotion and Holiday", 
+       y ="Proportion", x ="Type", fill = "Status") +
+  scale_fill_manual(values = c("0" = "lightgreen", "1" = "forestgreen"),
+                    labels = c("0" = "No", "1" = "Yes")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+## Fit a Poisson Regression Mode
+
+```{r}
+
+model <- glm(
+  sales_count ~ day_of_week + promo + holiday + store_size,
+  family = poisson(link = "log"),
+  data = data
+)
+
+summary(model)
+
+```
+
+**What happens to expected sales when there’s a promotion?**
+
+```{r}
+exp(coef(model)["promo"])*100
+```
+
+When there is a promotion, the expected sales count increases by approximately 50.8% compared to when there is no promotion. This effect is statistically significant (p < 0.001), which means that promotions have a strong positive effect on sales counts.
+
+**How does store size affect expected sales?** 
+
+```{r}
+exp(coef(model)["store_sizemedium"])*100
+exp(coef(model)["store_sizesmall"])*100
+```
+
+The model compares the expected sales of medium and small stores relative to large stores. Medium stores have 49.8% of the sales of large stores (a 50.2% decrease), which means that if a large store expects to sell 100 items on a typical day, a medium store would only sell about 50. While small stores have 24.77% of the sales of large stores (a 75.23% decrease), which means that if a large store sells 100 items, a small store would only sell around 25. The expected sales drop significantly as store size decreases.
+
+```{r}
+
+```
+
+## Assess Model Fit
+
+```{r}
+deviance(model) / df.residual(model)
+```
+
+Since 1.0298 is very close to 1 and much less than 1.5, there’s no evidence of overdispersion in the model. The poisson regression model seems appropriate for the data, which means that there's no remedy or model comparison needed.
+
+## Make Predictions
+
+```{r}
+
+predict_sales <- function(day_of_week, promo, holiday, store_size) {
+  new_data <- data.frame(
+    day_of_week = day_of_week,
+    promo = promo,
+    holiday = holiday,
+    store_size = store_size
+  )
+  
+  predicted_sales <- predict(model, newdata = new_data, type = "response")
+  
+  return(predicted_sales)
+}
+
+```
+
+**Predict sales for a medium store on a Monday with a promotion and no holiday**
+
+```{r}
+predict_sales(1, 1, 0, "medium")
+```
+
+On a normal Monday with a promotion, a medium store is expected to make about 16 sales.
+
+**Predict sales for a large store on a Sunday with no promotion and a holiday**
+
+```{r}
+predict_sales(7, 0, 1, "large")
+```
+
+On a holiday Sunday without a promotion,  a large store is expected to make about 21 sales.
+
+Overall, sale are affected by store size, promotions, holidays, and the day of the week, with larger stores, promotions, and holidays leading to higher sales.
+
+## Reflection 
+
+This project analyzed store sales data using Poisson regression to understand how factors like store size, day of the week, promotions, and holidays influence daily sales counts. A Poisson regression model was fit using sales_count as the outcome variable, including all specified predictors. The model summary showed that all predictors were statistically significant and contributed meaningfully to explaining sales variation. Store size had the strongest effect, with larger stores significantly increasing expected sales. Promotions also raised sales, while day of the week and holiday had moderate but meaningful impacts. Model diagnostics showed no overdispersion, validating the use of the Poisson model without the need for alternatives like the negative binomial. However, one limitation of using this model in a real-world setting is that it relies only on the variables in the dataset. Important outside influences—like weather, local events, or changes in customer habits—aren’t included, so the model might miss key factors that affect sales in practice.
+
