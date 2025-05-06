@@ -1,0 +1,290 @@
+---
+title: "FA 6"
+author: "Lindsay Faith Bazar"
+date: "May 04, 2025"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(caret)
+library(nnet)
+library(glmnet)
+library(MLmetrics)
+
+```
+
+
+```{r include=FALSE}
+data <- read_csv("customer_segmentation.csv")
+```
+
+## Data Exploration
+```{r}
+glimpse(data)
+colSums(is.na(data))
+```
+
+Since there are no missing values present, we can proceed to the visualization step.
+
+### Age Distribution
+
+```{r}
+ggplot(data, aes(x=Age)) +
+  geom_histogram(binwidth = 5, fill = "darkblue", color = "white") +
+  labs(title = "Age Distribution", x = "Age", y = "Count")
+```
+
+
+### Annual Income Distribution
+
+```{r}
+ggplot(data, aes(x=`Annual Income (K$)`)) +
+  geom_histogram(binwidth = 5, fill = "darkgreen", color = "white") +
+  labs(title = "Annual Income Distribution" , x = "Annual Income", y = "Count")
+```
+
+
+### Average Spend per Visit Distribution
+
+```{r }
+ggplot(data, aes(x = `Average Spend per Visit ($)`)) +
+  geom_histogram(binwidth = 10, fill = "darkviolet", color = "white") +
+  labs(title = "Distribution of Average Spend per Visit", x = "Average Spend ($)", y = "Count")
+```
+
+```{r}
+
+ggplot(data, aes(x = `Customer Segment`, fill = `Customer Segment`)) +
+  geom_bar() +
+  labs(title = "Customer Segment Distribution", x = "Segment", y = "Count") +
+  theme_minimal()
+```
+
+
+## Data Preprocessing
+
+Encoding gender to numeric: 
+
+```{r encode gender}
+data$Gender <- ifelse(data$Gender == "Male", 1, 0)
+
+```
+
+One-Hot Encoding for the product category: 
+
+```{r}
+data <- data%>%
+  mutate(`Product Category Purchased` = as.factor(`Product Category Purchased`)) %>%
+  tidyr::pivot_wider(
+    names_from = `Product Category Purchased`,
+    values_from = `Product Category Purchased`,
+    values_fn = length,
+    values_fill = 0
+  )
+```
+
+Scaling Numeric Variables: 
+
+```{r}
+data_scaled <- data %>%
+  mutate(
+    Age = scale(Age),
+    `Annual Income (K$)` = scale(`Annual Income (K$)`),
+    `Average Spend per Visit ($)` = scale(`Average Spend per Visit ($)`)
+  )
+
+```
+
+Converting Target Variable to Factor: 
+```{r}
+data_scaled$`Customer Segment` <- as.factor(data_scaled$`Customer Segment`)
+
+```
+
+Splitting into Training and Test Sets:
+
+```{r}
+
+set.seed(123) 
+train_index <- createDataPartition(data_scaled$`Customer Segment`, p = 0.8, list = FALSE)
+
+train_data <- data_scaled[train_index, ]
+test_data  <- data_scaled[-train_index, ]
+
+```
+
+## Model Building
+
+```{r}
+model <- multinom(`Customer Segment` ~ ., data = train_data)
+summary(model)
+
+```
+
+The multinomial logistic regression model predicts customer segments based on their personal details and shopping habits. Buying fashion products makes it more likely for a customer to be a Premium or Regular shopper. Female customers are also more likely to be Premium shoppers compared to Regular ones. Older customers have a slightly higher chance of being Premium shoppers. Interestingly, higher annual income seems to lower the chances of being Premium, which suggests that income data might need to be scaled for better results.
+
+
+Residual Deviance: 18, 497.86
+AIC: 18,541.86
+
+Tuning hyperparameters using cross-validation:
+
+```{r cross validation}
+y <- as.factor(train_data$`Customer Segment`)
+x <- model.matrix(`Customer Segment` ~ . - 1, data = train_data)
+
+
+x_test <- model.matrix(`Customer Segment` ~ . - 1, data = test_data)
+y_test <- as.factor(test_data$`Customer Segment`)
+
+cv_model <- cv.glmnet(
+  x, y, 
+  family = "multinomial",
+  type.measure = "class",
+  alpha = 0,  
+  nfolds = 5
+)
+
+plot(cv_model)
+```
+
+
+```{r}
+best_lambda <- cv_model$lambda.min
+print(best_lambda)
+```
+
+```{r}
+final_model <- glmnet(
+  x, y,
+  family = "multinomial",
+  alpha = 0,
+  lambda = best_lambda
+)
+```
+
+
+## Model Evaluation 
+
+```{r}
+predictions <- predict(final_model, newx = x_test, type = "class")
+
+```
+
+```{r}
+
+conf_mat <- confusionMatrix(factor(predictions), y_test)
+conf_mat
+```
+
+
+```{r}
+
+accuracy <- conf_mat$overall["Accuracy"]
+precision <- conf_mat$byClass[, "Pos Pred Value"]
+recall <- conf_mat$byClass[, "Sensitivity"]
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+
+cat("Accuracy:", round(accuracy, 4), "\n")
+cat("Precision (per class):\n"); print(round(precision, 4))
+cat("Recall (per class):\n"); print(round(recall, 4))
+cat("F1-Score (per class):\n"); print(round(f1_score, 4))
+```
+
+
+## Refinement 
+
+```{r}
+data_scaled <- data_scaled %>%
+  mutate(
+    Income_Age_Interaction = scale(`Annual Income (K$)` * Age)
+  )
+set.seed(123)
+train_index <- createDataPartition(data_scaled$`Customer Segment`, p = 0.8, list = FALSE)
+train_data <- data_scaled[train_index, ]
+test_data <- data_scaled[-train_index, ]
+
+x_train <- model.matrix(`Customer Segment` ~ . -1, data = train_data)
+y_train <- as.factor(train_data$`Customer Segment`)
+x_test <- model.matrix(`Customer Segment` ~ . -1, data = test_data)
+y_test <- as.factor(test_data$`Customer Segment`)
+
+alphas <- seq(0, 1, by = 0.2)  # From Ridge (0) to LASSO (1)
+cv_results <- list()
+
+for (a in alphas) {
+  cat("Fitting model with alpha =", a, "\n")
+  cv_fit <- cv.glmnet(
+    x_train, y_train,
+    family = "multinomial",
+    type.measure = "class",
+    alpha = a,
+    nfolds = 5
+  )
+  cv_results[[paste0("alpha_", a)]] <- cv_fit
+}
+
+best_model <- NULL
+lowest_error <- Inf
+best_alpha <- NA
+
+for (a in names(cv_results)) {
+  err <- min(cv_results[[a]]$cvm)
+  if (err < lowest_error) {
+    lowest_error <- err
+    best_model <- cv_results[[a]]
+    best_alpha <- as.numeric(gsub("alpha_", "", a))
+  }
+}
+
+cat("Best alpha:", best_alpha, "\n")
+best_lambda <- best_model$lambda.min
+
+
+```
+
+```{r}
+
+final_model <- glmnet(
+  x_train, y_train,
+  family = "multinomial",
+  lambda = best_lambda
+)
+
+```
+
+Evaluating with Cross-Validation:
+
+```{r}
+
+cv_fit <- train(
+  x = x_train, y = y_train,
+  method = "glmnet",
+  family = "multinomial",
+  trControl = trainControl(method = "cv", number = 10),
+  tuneGrid = expand.grid(alpha = best_alpha, lambda = best_lambda)
+)
+print(cv_fit)
+
+```
+
+
+## Results and Discussion 
+
+This model was developed to classify customers into different segments based on their demographic and shopping behavior. The dataset includes details like Age, Annual Income, Gender, Product Category Purchased, Average Spend per Visit, Number of Visits in the Last 6 Months, and the target variable Customer Segment (with three categories: Budget Shopper, Regular Shopper, Premium Shopper)
+
+Based from the results, more fashion purchases slightly increased the chance of being a Premium or Regular Shopper.
+
+Buying Books was negatively linked to being a Premium or Regular Shopper.
+
+Gender, Age, and Annual Income had only minor effects on predicting customer segments.
